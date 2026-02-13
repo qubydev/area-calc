@@ -5,21 +5,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Polygon Area Calculator</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <style>
-        /* Custom scrollbar for matrix overflow on mobile */
-        .matrix-scroll::-webkit-scrollbar {
+        /* Custom scrollbar to allow horizontal scrolling for wide matrices on mobile */
+        .overflow-x-auto::-webkit-scrollbar {
             height: 6px;
         }
 
-        .matrix-scroll::-webkit-scrollbar-thumb {
+        .overflow-x-auto::-webkit-scrollbar-thumb {
             background: #cbd5e1;
             border-radius: 4px;
-        }
-
-        .matrix-scroll {
-            overflow-x: auto;
-            padding-bottom: 10px;
         }
     </style>
 </head>
@@ -30,7 +32,7 @@
 
         <div class="text-center space-y-2">
             <h1 class="text-3xl font-bold text-indigo-600">Polygon Area Calculator</h1>
-            <p class="text-gray-500 text-sm">Coordinate method (Shoelace Formula) with strict 4-decimal precision.</p>
+            <p class="text-gray-500 text-sm">Shoelace Formula with KaTeX Matrix & Chart.js</p>
         </div>
 
         <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
@@ -52,17 +54,14 @@
             <p id="error-msg" class="text-red-500 text-sm mt-3 hidden text-center"></p>
         </div>
 
-        <div id="results" class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hidden space-y-6">
+        <div id="results" class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hidden space-y-8">
 
             <div>
                 <h3 class="font-semibold text-gray-700 border-b pb-2 mb-3">1. Matrix Setup</h3>
                 <p class="text-sm text-gray-500 mb-2">The last point connects back to the first point to close the
                     polygon.</p>
-                <div
-                    class="matrix-scroll bg-gray-50 p-4 rounded-xl border border-gray-200 font-mono text-sm flex items-center gap-2">
-                    <div class="text-2xl text-gray-400">|</div>
-                    <div id="matrix-content" class="flex-1"></div>
-                    <div class="text-2xl text-gray-400">|</div>
+                <div class="overflow-x-auto bg-white py-4 rounded-xl border border-gray-200">
+                    <div id="matrix-content" class="text-center"></div>
                 </div>
             </div>
 
@@ -92,7 +91,13 @@
                         <p id="final-formula" class="mt-1"></p>
                         <p class="text-xl font-bold mt-2 text-green-700" id="final-area"></p>
                     </div>
+                </div>
+            </div>
 
+            <div>
+                <h3 class="font-semibold text-gray-700 border-b pb-2 mb-3">4. Polygon Plot</h3>
+                <div class="h-64 w-full border border-gray-200 rounded-xl p-2 bg-gray-50">
+                    <canvas id="polygonChart"></canvas>
                 </div>
             </div>
 
@@ -103,8 +108,9 @@
         let points = [
             { x: '', y: '' },
             { x: '', y: '' },
-            { x: '', y: '' } // Start with 3 points for a basic polygon (triangle)
+            { x: '', y: '' } // Start with a triangle
         ];
+        let chartInstance = null; // Store chart instance to destroy/recreate
 
         // Ensure exactly 4 decimal places
         function round4(num) {
@@ -112,23 +118,22 @@
         }
 
         function renderPoints() {
-            const container = document.getElementById('points-container');
-            container.innerHTML = '';
+            let html = '';
             points.forEach((p, index) => {
-                const row = document.createElement('div');
-                row.className = 'flex items-center gap-2';
-                row.innerHTML = `
-                    <div class="w-8 text-center text-gray-400 font-mono text-sm">P${index + 1}</div>
-                    <input type="number" step="any" value="${p.x}" onchange="updatePoint(${index}, 'x', this.value)" placeholder="X" class="flex-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <input type="number" step="any" value="${p.y}" onchange="updatePoint(${index}, 'y', this.value)" placeholder="Y" class="flex-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <button onclick="removePoint(${index})" class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition" title="Remove point">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                        </svg>
-                    </button>
+                html += `
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 text-center text-gray-400 font-mono text-sm">P${index + 1}</div>
+                        <input type="number" step="any" value="${p.x}" onchange="updatePoint(${index}, 'x', this.value)" placeholder="X" class="flex-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <input type="number" step="any" value="${p.y}" onchange="updatePoint(${index}, 'y', this.value)" placeholder="Y" class="flex-1 w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <button onclick="removePoint(${index})" class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition" title="Remove point">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
                 `;
-                container.appendChild(row);
             });
+            document.getElementById('points-container').innerHTML = html;
         }
 
         function updatePoint(index, axis, value) {
@@ -157,14 +162,9 @@
             errEl.classList.remove('hidden');
         }
 
-        function hideError() {
-            document.getElementById('error-msg').classList.add('hidden');
-        }
-
         function calculateArea() {
-            hideError();
+            document.getElementById('error-msg').classList.add('hidden');
 
-            // Validate and parse inputs to 4 decimal strings
             let parsedPoints = [];
             for (let i = 0; i < points.length; i++) {
                 let x = parseFloat(points[i].x);
@@ -179,57 +179,55 @@
             // Close the polygon
             parsedPoints.push(parsedPoints[0]);
 
-            renderMatrix(parsedPoints);
+            renderKaTeXMatrix(parsedPoints);
             processSteps(parsedPoints);
+            drawPlot(parsedPoints);
 
             document.getElementById('results').classList.remove('hidden');
         }
 
-        function renderMatrix(pts) {
-            let rowX = `<div class="flex gap-4">`;
-            let rowY = `<div class="flex gap-4">`;
+        function renderKaTeXMatrix(pts) {
+            // Build a LaTeX string for the determinant matrix (\begin{vmatrix})
+            let latex = "\\begin{vmatrix} ";
+            latex += pts.map(p => p.x).join(" & ");
+            latex += " \\\\ "; // Next row
+            latex += pts.map(p => p.y).join(" & ");
+            latex += " \\end{vmatrix}";
 
-            pts.forEach((p, i) => {
-                let label = i === pts.length - 1 ? "P1" : `P${i + 1}`;
-                rowX += `<div class="text-right w-20 flex-shrink-0"><span class="text-xs text-gray-400 block">${label}</span>${p.x}</div>`;
-                rowY += `<div class="text-right w-20 flex-shrink-0">${p.y}</div>`;
+            // Render it into the div
+            katex.render(latex, document.getElementById('matrix-content'), {
+                throwOnError: false,
+                displayMode: true // Centers it and makes it larger
             });
-
-            rowX += `</div>`;
-            rowY += `</div>`;
-
-            document.getElementById('matrix-content').innerHTML = `${rowX}${rowY}`;
         }
 
         function processSteps(pts) {
             let sum1 = 0;
             let sum2 = 0;
-
-            let stepsForwardHtml = '';
-            let stepsBackwardHtml = '';
+            let stepsFwd = '';
+            let stepsBwd = '';
 
             for (let i = 0; i < pts.length - 1; i++) {
                 // Forward (X_i * Y_i+1)
                 let x1 = parseFloat(pts[i].x);
                 let y2 = parseFloat(pts[i + 1].y);
                 let prod1 = parseFloat(round4(x1 * y2));
-                sum1 = parseFloat(round4(sum1 + prod1)); // Strict rounding on running sum
+                sum1 = parseFloat(round4(sum1 + prod1));
 
-                stepsForwardHtml += `<div>(${pts[i].x} × ${pts[i + 1].y}) = ${round4(prod1)} <span class="text-blue-400 text-xs ml-2">Running: ${round4(sum1)}</span></div>`;
+                stepsFwd += `<div>(${pts[i].x} × ${pts[i + 1].y}) = ${round4(prod1)} <span class="text-blue-400 text-xs ml-2">Running: ${round4(sum1)}</span></div>`;
 
                 // Backward (Y_i * X_i+1)
                 let y1 = parseFloat(pts[i].y);
                 let x2 = parseFloat(pts[i + 1].x);
                 let prod2 = parseFloat(round4(y1 * x2));
-                sum2 = parseFloat(round4(sum2 + prod2)); // Strict rounding on running sum
+                sum2 = parseFloat(round4(sum2 + prod2));
 
-                stepsBackwardHtml += `<div>(${pts[i].y} × ${pts[i + 1].x}) = ${round4(prod2)} <span class="text-orange-400 text-xs ml-2">Running: ${round4(sum2)}</span></div>`;
+                stepsBwd += `<div>(${pts[i].y} × ${pts[i + 1].x}) = ${round4(prod2)} <span class="text-orange-400 text-xs ml-2">Running: ${round4(sum2)}</span></div>`;
             }
 
-            document.getElementById('steps-forward').innerHTML = stepsForwardHtml;
+            document.getElementById('steps-forward').innerHTML = stepsFwd;
             document.getElementById('sum1-result').textContent = round4(sum1);
-
-            document.getElementById('steps-backward').innerHTML = stepsBackwardHtml;
+            document.getElementById('steps-backward').innerHTML = stepsBwd;
             document.getElementById('sum2-result').textContent = round4(sum2);
 
             // Final Calculation
@@ -238,6 +236,51 @@
 
             document.getElementById('final-formula').textContent = `Area = 0.5000 × | ${round4(sum1)} - ${round4(sum2)} | = 0.5000 × ${round4(diff)}`;
             document.getElementById('final-area').textContent = `${round4(area)} units²`;
+        }
+
+        function drawPlot(pts) {
+            const ctx = document.getElementById('polygonChart').getContext('2d');
+
+            // Destroy previous chart if it exists to avoid overlapping
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            // Map string coordinates back to floats for Chart.js
+            const plotData = pts.map(p => ({ x: parseFloat(p.x), y: parseFloat(p.y) }));
+
+            chartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: 'Polygon Shape',
+                        data: plotData,
+                        showLine: true, // Connect the dots
+                        fill: true, // Fill the inside
+                        backgroundColor: 'rgba(79, 70, 229, 0.2)', // Light indigo fill
+                        borderColor: 'rgba(79, 70, 229, 1)', // Solid indigo border
+                        pointBackgroundColor: '#ef4444', // Red points
+                        pointRadius: 5,
+                        pointHoverRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `(${ctx.parsed.x}, ${ctx.parsed.y})`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { type: 'linear', position: 'bottom', grid: { color: '#f3f4f6' } },
+                        y: { grid: { color: '#f3f4f6' } }
+                    }
+                }
+            });
         }
 
         // Init
